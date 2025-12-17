@@ -5,75 +5,65 @@ services:
   - type: web
     name: facade-suite-api
     runtime: python
+    runtimeVersion: 3.11.9
     region: frankfurt
     plan: starter
-    buildCommand: "cd backend && pip install -r requirements.txt"
-    startCommand: "cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    buildCommand: cd backend && pip install -r requirements.txt
+    startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+
     envVars:
-      # Supabase - Projet externe (À remplir manuellement dans Render Dashboard)
-      # URL: https://yrsiurdgigqjgycqujmd.supabase.co
       - key: SUPABASE_URL
         value: https://yrsiurdgigqjgycqujmd.supabase.co
       - key: SUPABASE_ANON_KEY
-        sync: false  # À remplir manuellement
+        sync: false
       - key: SUPABASE_SERVICE_KEY
-        sync: false  # À remplir manuellement - SECRET!
+        sync: false
       - key: SUPABASE_JWT_SECRET
-        sync: false  # À remplir manuellement
+        sync: false
       - key: DATABASE_URL
-        sync: false  # postgresql://postgres:[PASSWORD]@db.yrsiurdgigqjgycqujmd.supabase.co:5432/postgres
-      
-      # Security
+        sync: false
+
       - key: SECRET_KEY
         generateValue: true
       - key: ALGORITHM
         value: HS256
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: "30"
-      
-      # CORS (À ajuster avec l'URL frontend)
+
       - key: CORS_ORIGINS
         value: '["https://facade-suite.onrender.com","http://localhost:5173"]'
-      
-      # Rate Limiting
+
       - key: RATE_LIMIT_PER_MINUTE
         value: "60"
-      
-      # Storage
+
       - key: STORAGE_BUCKET
         value: facade-suite-private
-      
-      # PDF
+
       - key: PDF_WATERMARK_TEXT
         value: TRIAL - Facade Suite
-      
-      # Debug
+
       - key: DEBUG
         value: "False"
-    
+
     healthCheckPath: /health
-  
+
   # Frontend Static Site React
-  # Repository: https://github.com/faridlia171-ship-it/facade-suite.git
   - type: web
     name: facade-suite
     runtime: static
     region: frankfurt
     plan: starter
-    buildCommand: "npm install && npm run build"
+    buildCommand: npm install && npm run build
     staticPublishPath: ./dist
+
     envVars:
-      # Supabase - Projet externe (PUBLIC - OK pour frontend)
-      # URL: https://yrsiurdgigqjgycqujmd.supabase.co
       - key: VITE_SUPABASE_URL
         value: https://yrsiurdgigqjgycqujmd.supabase.co
       - key: VITE_SUPABASE_ANON_KEY
-        sync: false  # Clé publique anon à remplir manuellement
-      
-      # API Backend (URL Render backend)
+        sync: false
       - key: VITE_API_BASE_URL
         value: https://facade-suite-api.onrender.com
-    
+
     routes:
       - type: rewrite
         source: /*
