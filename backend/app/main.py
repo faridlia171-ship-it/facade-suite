@@ -1,72 +1,48 @@
-"""
-Point d'entrée principal de l'API FastAPI.
-TEST CORS FORCÉ – RENDER
-"""
+"""Point d'entrée principal de l'API FastAPI."""
 
-from fastapi import FastAPI, Response, Request
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from app.settings import settings
-from app.security.rate_limit import limiter
-from app.api import (
-    auth,
-    projects,
-    customers,
-    facades,
-    photos,
-    metrage,
-    quotes,
-    pdf,
-    companies,
-)
+from .settings import settings
+from .security.rate_limit import limiter
+from .api import auth, projects, customers, facades, photos, metrage, quotes, pdf, companies
 
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    description="API SaaS B2B pour gestion de chantiers de façade",
+    description="API SaaS B2B pour gestion de chantiers de façade"
 )
 
-# -----------------------------------------------------------------------------
-# RATE LIMIT
-# -----------------------------------------------------------------------------
-
+# Rate limiting
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# -----------------------------------------------------------------------------
-# 🔥 CORS FORCÉ MANUEL (IMPOSSIBLE À IGNORER)
-# -----------------------------------------------------------------------------
-
-@app.middleware("http")
-async def force_cors(request: Request, call_next):
-    response: Response = await call_next(request)
-    response.headers["Access-Control-Allow-Origin"] = "https://facadesuite.pleinsudeco.com"
-    response.headers["Access-Control-Allow-Credentials"] = "true"
-    response.headers["Access-Control-Allow-Methods"] = "*"
-    response.headers["Access-Control-Allow-Headers"] = "*"
-    return response
-
-# -----------------------------------------------------------------------------
-# ROUTES
-# -----------------------------------------------------------------------------
+# ✅ CORS OFFICIEL – CONFIGURATION CORRECTE POUR RENDER
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://facadesuite.pleinsudeco.com",
+    ],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+)
 
 @app.get("/")
 async def root():
     return {
         "app": settings.APP_NAME,
         "version": settings.APP_VERSION,
-        "status": "ok",
+        "status": "ok"
     }
 
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
 
-# -----------------------------------------------------------------------------
-# ROUTERS
-# -----------------------------------------------------------------------------
-
+# Routers
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(customers.router, prefix="/api/customers", tags=["customers"])
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
