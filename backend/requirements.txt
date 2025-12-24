@@ -32,3 +32,4 @@ slowapi==0.1.9
 
 # images/PDF (si utilisé)
 pillow==10.4.0
+reportlab==4.0.8
