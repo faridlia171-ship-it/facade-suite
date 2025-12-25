@@ -1,6 +1,6 @@
 /**
  * API helper centralisé - Facade Suite
- * Injecte automatiquement le JWT Supabase
+ * Gère automatiquement le token JWT Supabase
  */
 
 import { API_URL } from '../config'
@@ -11,15 +11,11 @@ export async function apiFetch(
 ) {
   const token = localStorage.getItem('access_token')
 
-  if (!token) {
-    throw new Error('Utilisateur non authentifié (token manquant)')
-  }
-
   const response = await fetch(`${API_URL}${endpoint}`, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(options.headers || {}),
     },
   })
