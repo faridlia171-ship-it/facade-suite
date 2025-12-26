@@ -1,13 +1,9 @@
-"""
-Routes d'authentification et d'onboarding.
-Compatible SUPABASE AUTH + schéma DB réel.
-"""
+"""Routes d'authentification et onboarding."""
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from datetime import datetime
-from uuid import UUID
 
 from ..db.database import get_db
 from ..db.models import Profile, Company, Subscription
@@ -16,142 +12,71 @@ from ..security.auth import get_current_user, AuthUser
 router = APIRouter()
 
 
-# =========================
-# SCHEMAS
-# =========================
-
 class OnboardingRequest(BaseModel):
     company_name: str
     accepted_terms: bool
 
 
-class OnboardingResponse(BaseModel):
-    message: str
-    company_id: UUID
-    profile_id: UUID
-
-
-class ProfileResponse(BaseModel):
-    user_id: UUID
-    company_id: UUID
-    company_name: str
-    role: str
-    plan_id: str | None
-    created_at: datetime
-
-
-# =========================
-# ROUTES
-# =========================
-
-@router.post(
-    "/onboarding",
-    response_model=OnboardingResponse,
-    status_code=status.HTTP_201_CREATED,
-)
+@router.post("/onboarding")
 async def onboarding(
     request: OnboardingRequest,
     current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """
-    Crée l'entreprise + profil OWNER + abonnement TRIAL.
-    Appelé UNE SEULE FOIS après création Supabase user.
-    """
-
+    """Crée le profil + company pour un utilisateur Supabase."""
     if not request.accepted_terms:
         raise HTTPException(
-            status_code=400,
-            detail="Vous devez accepter les conditions d'utilisation",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Conditions non acceptées"
         )
 
-    # 🔒 Sécurité : empêcher double onboarding
-    existing_profile = (
-        db.query(Profile)
-        .filter(Profile.id == UUID(current_user.user_id))
-        .first()
-    )
+    # 🔒 Sécurité : on utilise TOUJOURS l'user du JWT
+    user_id = current_user.user_id
 
-    if existing_profile:
+    # Vérifier si le profil existe déjà
+    existing = db.query(Profile).filter(Profile.id == user_id).first()
+    if existing:
+        return {
+            "message": "Profil déjà existant",
+            "company_id": str(existing.company_id),
+            "profile_id": str(existing.id),
+        }
+
+    try:
+        # Créer la company
+        company = Company(name=request.company_name)
+        db.add(company)
+        db.flush()
+
+        # Créer le profil OWNER
+        profile = Profile(
+            id=user_id,
+            company_id=company.id,
+            role="OWNER",
+            created_at=datetime.utcnow(),
+        )
+        db.add(profile)
+
+        # Créer abonnement TRIAL
+        subscription = Subscription(
+            company_id=company.id,
+            plan_id="TRIAL",
+            status="active",
+            started_at=datetime.utcnow(),
+        )
+        db.add(subscription)
+
+        db.commit()
+
+        return {
+            "message": "Onboarding réussi",
+            "company_id": str(company.id),
+            "profile_id": str(profile.id),
+        }
+
+    except Exception as e:
+        db.rollback()
         raise HTTPException(
-            status_code=409,
-            detail="Onboarding déjà effectué pour cet utilisateur",
+            status_code=500,
+            detail=f"Erreur base de données onboarding: {str(e)}"
         )
-
-    # 1️⃣ Création entreprise
-    company = Company(
-        name=request.company_name,
-    )
-    db.add(company)
-    db.flush()  # récupère company.id
-
-    # 2️⃣ Création profil OWNER
-    profile = Profile(
-        id=UUID(current_user.user_id),
-        company_id=company.id,
-        role="OWNER",
-    )
-    db.add(profile)
-
-    # 3️⃣ Abonnement TRIAL
-    subscription = Subscription(
-        company_id=company.id,
-        plan_id="TRIAL",
-        status="active",
-        started_at=datetime.utcnow(),
-    )
-    db.add(subscription)
-
-    db.commit()
-
-    return {
-        "message": "Onboarding réussi",
-        "company_id": company.id,
-        "profile_id": profile.id,
-    }
-
-
-@router.get(
-    "/me",
-    response_model=ProfileResponse,
-)
-async def get_me(
-    current_user: AuthUser = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """
-    Retourne le profil courant (utilisé par le front).
-    """
-
-    profile = (
-        db.query(Profile)
-        .filter(Profile.id == UUID(current_user.user_id))
-        .first()
-    )
-
-    if not profile:
-        raise HTTPException(
-            status_code=404,
-            detail="Profil non trouvé (onboarding non effectué)",
-        )
-
-    company = (
-        db.query(Company)
-        .filter(Company.id == profile.company_id)
-        .first()
-    )
-
-    subscription = (
-        db.query(Subscription)
-        .filter(Subscription.company_id == profile.company_id)
-        .first()
-    )
-
-    return ProfileResponse(
-        user_id=profile.id,
-        company_id=profile.company_id,
-        company_name=company.name,
-        role=profile.role,
-        plan_id=subscription.plan_id if subscription else None,
-        created_at=profile.created_at,
-    )
