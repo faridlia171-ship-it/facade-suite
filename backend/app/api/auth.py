@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import cast, String
 from pydantic import BaseModel
 from datetime import datetime
 from uuid import UUID
@@ -39,18 +40,22 @@ async def onboarding(
             detail="Vous devez accepter les conditions d'utilisation"
         )
 
-    # ✅ CONVERSION UUID OBLIGATOIRE
+    # 🔐 Validation UUID (format)
     try:
-        user_uuid = UUID(request.user_id)
+        UUID(request.user_id)
     except ValueError:
         raise HTTPException(
             status_code=400,
             detail="user_id invalide (UUID attendu)"
         )
 
-    # Vérifier si le profil existe déjà
+    # ✅ CAST SQL (TEXT = TEXT)
     try:
-        existing = db.query(Profile).filter(Profile.id == user_uuid).first()
+        existing = (
+            db.query(Profile)
+            .filter(cast(Profile.id, String) == request.user_id)
+            .first()
+        )
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -65,20 +70,17 @@ async def onboarding(
         }
 
     try:
-        # Création entreprise
         company = Company(name=request.company_name)
         db.add(company)
         db.flush()
 
-        # Création profil OWNER
         profile = Profile(
-            id=user_uuid,
+            id=request.user_id,  # TEXT → cohérent avec DB
             company_id=company.id,
             role="OWNER"
         )
         db.add(profile)
 
-        # Abonnement TRIAL
         subscription = Subscription(
             company_id=company.id,
             plan_id="TRIAL",
@@ -108,7 +110,12 @@ async def get_me(
     current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    profile = db.query(Profile).filter(Profile.id == UUID(current_user.user_id)).first()
+    profile = (
+        db.query(Profile)
+        .filter(cast(Profile.id, String) == current_user.user_id)
+        .first()
+    )
+
     if not profile:
         raise HTTPException(status_code=404, detail="Profil utilisateur non trouvé")
 
