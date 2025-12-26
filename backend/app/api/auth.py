@@ -1,9 +1,9 @@
-"""Routes d'authentification."""
+"""Routes d'authentification et onboarding."""
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from datetime import datetime
-from uuid import UUID
 
 from ..db.database import get_db
 from ..db.models import Profile, Company, Subscription
@@ -13,14 +13,12 @@ router = APIRouter()
 
 
 class OnboardingRequest(BaseModel):
-    """Demande d'onboarding."""
     company_name: str
     accepted_terms: bool
     user_id: str
 
 
 class ProfileResponse(BaseModel):
-    """Réponse profil."""
     user_id: str
     company_id: str
     company_name: str
@@ -34,42 +32,59 @@ async def onboarding(
     request: OnboardingRequest,
     db: Session = Depends(get_db)
 ):
-    """Onboarding: création entreprise + profil."""
     if not request.accepted_terms:
         raise HTTPException(
             status_code=400,
             detail="Vous devez accepter les conditions d'utilisation"
         )
-    
-    # Vérifier si le profil existe déjà
-    existing = db.query(Profile).filter(Profile.id == request.user_id).first()
+
+    # 🔒 Sécurisation DB (évite 500 silencieux)
+    try:
+        existing = db.query(Profile).filter(Profile.id == request.user_id).first()
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur base de données (profile lookup): {str(e)}"
+        )
+
+    # Profil déjà existant → on retourne proprement
     if existing:
-        raise HTTPException(status_code=400, detail="Profil déjà existant")
-    
-    # Créer l'entreprise
-    company = Company(name=request.company_name)
-    db.add(company)
-    db.flush()
-    
-    # Créer le profil OWNER
-    profile = Profile(
-        id=request.user_id,
-        company_id=company.id,
-        role="OWNER"
-    )
-    db.add(profile)
-    
-    # Créer l'abonnement TRIAL
-    subscription = Subscription(
-        company_id=company.id,
-        plan_id="TRIAL",
-        status="active",
-        started_at=datetime.utcnow()
-    )
-    db.add(subscription)
-    
-    db.commit()
-    
+        return {
+            "message": "Profil déjà existant",
+            "company_id": str(existing.company_id),
+            "profile_id": str(existing.id)
+        }
+
+    # Création entreprise
+    try:
+        company = Company(name=request.company_name)
+        db.add(company)
+        db.flush()
+
+        profile = Profile(
+            id=request.user_id,
+            company_id=company.id,
+            role="OWNER"
+        )
+        db.add(profile)
+
+        subscription = Subscription(
+            company_id=company.id,
+            plan_id="TRIAL",
+            status="active",
+            started_at=datetime.utcnow()
+        )
+        db.add(subscription)
+
+        db.commit()
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erreur création onboarding: {str(e)}"
+        )
+
     return {
         "message": "Onboarding réussi",
         "company_id": str(company.id),
@@ -82,13 +97,15 @@ async def get_me(
     current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Récupère le profil de l'utilisateur courant."""
     profile = db.query(Profile).filter(Profile.id == current_user.user_id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profil utilisateur non trouvé")
+
     company = db.query(Company).filter(Company.id == profile.company_id).first()
     subscription = db.query(Subscription).filter(
         Subscription.company_id == profile.company_id
     ).first()
-    
+
     return ProfileResponse(
         user_id=str(profile.id),
         company_id=str(profile.company_id),
