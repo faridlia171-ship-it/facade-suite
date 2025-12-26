@@ -19,13 +19,15 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# ✅ CORS – MODE STABILISATION (OBLIGATOIRE POUR DEBUG)
-# ⚠️ À restreindre plus tard une fois tout fonctionnel
+# ✅ CORS — VERSION ROBUSTE (PROD)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://facadesuite.pleinsudeco.com",
+        "https://www.facadesuite.pleinsudeco.com",
+    ],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
