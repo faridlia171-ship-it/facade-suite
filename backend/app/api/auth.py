@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from datetime import datetime
+from uuid import UUID
 
 from ..db.database import get_db
 from ..db.models import Profile, Company, Subscription
@@ -38,16 +39,24 @@ async def onboarding(
             detail="Vous devez accepter les conditions d'utilisation"
         )
 
-    # 🔒 Sécurisation DB (évite 500 silencieux)
+    # ✅ CONVERSION UUID OBLIGATOIRE
     try:
-        existing = db.query(Profile).filter(Profile.id == request.user_id).first()
+        user_uuid = UUID(request.user_id)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="user_id invalide (UUID attendu)"
+        )
+
+    # Vérifier si le profil existe déjà
+    try:
+        existing = db.query(Profile).filter(Profile.id == user_uuid).first()
     except Exception as e:
         raise HTTPException(
             status_code=500,
             detail=f"Erreur base de données (profile lookup): {str(e)}"
         )
 
-    # Profil déjà existant → on retourne proprement
     if existing:
         return {
             "message": "Profil déjà existant",
@@ -55,19 +64,21 @@ async def onboarding(
             "profile_id": str(existing.id)
         }
 
-    # Création entreprise
     try:
+        # Création entreprise
         company = Company(name=request.company_name)
         db.add(company)
         db.flush()
 
+        # Création profil OWNER
         profile = Profile(
-            id=request.user_id,
+            id=user_uuid,
             company_id=company.id,
             role="OWNER"
         )
         db.add(profile)
 
+        # Abonnement TRIAL
         subscription = Subscription(
             company_id=company.id,
             plan_id="TRIAL",
@@ -97,7 +108,7 @@ async def get_me(
     current_user: AuthUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    profile = db.query(Profile).filter(Profile.id == current_user.user_id).first()
+    profile = db.query(Profile).filter(Profile.id == UUID(current_user.user_id)).first()
     if not profile:
         raise HTTPException(status_code=404, detail="Profil utilisateur non trouvé")
 
