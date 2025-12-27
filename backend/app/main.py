@@ -1,13 +1,11 @@
-"""Point d'entrée principal de l'API FastAPI."""
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from .settings import settings
-from .security.rate_limit import limiter
-from .api import auth, projects, customers, facades, photos, metrage, quotes, pdf, companies
+from app.settings import settings
+from app.security.rate_limit import limiter
+from app.api import auth, projects, customers, facades, photos, metrage, quotes, pdf, companies
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -15,32 +13,26 @@ app = FastAPI(
     description="API SaaS B2B pour gestion de chantiers de façade"
 )
 
+# ⚠️ CORS ULTRA LARGE — TEMPORAIRE POUR DÉBLOCAGE
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"],
+)
+
 # Rate limiting
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# ✅ CORS — VERSION ROBUSTE (OBLIGATOIRE)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "https://facadesuite.pleinsudeco.com",
-        "https://www.facadesuite.pleinsudeco.com",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 @app.get("/")
-async def root():
-    return {
-        "app": settings.APP_NAME,
-        "version": settings.APP_VERSION,
-        "status": "ok"
-    }
+def root():
+    return {"status": "ok"}
 
 @app.get("/health")
-async def health():
+def health():
     return {"status": "healthy"}
 
 # Routers
